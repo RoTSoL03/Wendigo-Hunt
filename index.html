@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wendigo Hunt 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #f1f1f1;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            cursor: pointer;
+        }
+        .game-title, .game-over-title {
+            font-family: 'Creepster', cursive;
+        }
+        canvas {
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.3);
+        }
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            flex-direction: column;
+            z-index: 10;
+        }
+        .start-button, .restart-button {
+            font-family: 'Creepster', cursive;
+            background-color: #7f1d1d;
+            border: none;
+            color: #fecaca;
+            padding: 1rem 2.5rem;
+            font-size: 2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            border-bottom: 4px solid #450a0a;
+            text-shadow: 2px 2px 4px #000;
+        }
+        .start-button:hover, .restart-button:hover {
+            background-color: #991b1b;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        }
+        .start-button:active, .restart-button:active {
+            transform: translateY(1px);
+            border-bottom-width: 2px;
+        }
+        .start-button:disabled {
+            background-color: #450a0a;
+            cursor: not-allowed;
+        }
+        .hidden {
+            display: none;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            pointer-events: none;
+        }
+        #stamina-bar-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 10px;
+            background-color: rgba(0,0,0,0.5);
+            border: 1px solid #4a5568;
+            border-radius: 5px;
+            z-index: 20;
+        }
+        #stamina-bar {
+            width: 100%;
+            height: 100%;
+            background-color: #4299e1;
+            border-radius: 4px;
+            transition: width 0.1s linear;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container" class="relative w-full h-full flex flex-col justify-center items-center p-4">
+        <!-- Game UI -->
+        <div id="ui-container" class="w-full max-w-4xl mb-2 text-center hidden" style="z-index: 5;">
+            <div class="flex justify-between items-center bg-black/50 p-3 rounded-lg border border-red-900/50 shadow-lg">
+                <div id="wendigo-status" class="text-red-400 text-lg md:text-xl">WENDIGO HITS LEFT: <span id="wendigo-health">5</span></div>
+                <div id="message-display" class="text-white text-sm md:text-base font-bold italic animate-pulse">You are not alone...</div>
+                <div class="flex items-center">
+                    <div id="key-icon" class="hidden text-yellow-400 mr-4 text-2xl">🔑</div>
+                    <div id="ammo-status" class="text-blue-300 text-lg md:text-xl">AMMO: <span id="player-ammo-display">1 / 11</span></div>
+                </div>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas"></canvas>
+        <div id="crosshair" class="hidden"></div>
+        <div id="stamina-bar-container" class="hidden">
+            <div id="stamina-bar"></div>
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="game-overlay">
+        <h1 class="game-title text-7xl md:text-9xl text-red-700 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]">Wendigo Hunt</h1>
+        <p class="text-lg md:text-2xl mt-4 mb-8 max-w-2xl text-gray-300">The forest has grown darker. Deeper. The creature of myth is here. You are its prey.</p>
+        <p class="text-base md:text-xl mt-2 mb-12 max-w-2xl text-gray-300 font-bold">Kill the beast, or find a way out.</p>
+        <button id="start-button" class="start-button">Enter The Forest</button>
+    </div>
+
+    <!-- Game Over/Win Screen -->
+    <div id="end-screen" class="game-overlay hidden">
+        <h1 id="end-title" class="game-over-title text-8xl md:text-9xl text-red-800 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]">YOU DIED</h1>
+        <p id="end-message" class="text-xl md:text-3xl my-8 text-gray-200">The forest claims another soul.</p>
+        <button id="restart-button" class="restart-button">Try Again</button>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const startScreen = document.getElementById('start-screen');
+        const endScreen = document.getElementById('end-screen');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+        const uiContainer = document.getElementById('ui-container');
+        const wendigoHealthDisplay = document.getElementById('wendigo-health');
+        const playerAmmoDisplay = document.getElementById('player-ammo-display');
+        const messageDisplay = document.getElementById('message-display');
+        const gameContainer = document.getElementById('game-container');
+        const crosshair = document.getElementById('crosshair');
+        const staminaBarContainer = document.getElementById('stamina-bar-container');
+        const staminaBar = document.getElementById('stamina-bar');
+        const keyIcon = document.getElementById('key-icon');
+
+        // --- Game Constants ---
+        const PLAYER_HEIGHT = 1.6;
+        const PLAYER_SPEED = 0.15;
+        const SPRINT_MULTIPLIER = 1.8;
+        const JUMP_STRENGTH = 0.2;
+        const GRAVITY = 0.01;
+        const BULLET_SPEED = 2;
+        const TREE_DENSITY = 0.03;
+        const MOUSE_SENSITIVITY = 0.002;
+        const RELOAD_TIME = 5000;
+        const MAP_SIZE = 200;
+        const GRASS_DENSITY = 0.2;
+        const ROCK_DENSITY = 0.005;
+        const ADS_SPEED = 7;
+
+        // --- Game State ---
+        let gameLoopId;
+        let gameState = {
+            running: false,
+            gameOver: false,
+            win: false,
+            wendigoHealth: 5,
+            playerAmmo: 11,
+            ammoInClip: 1,
+            isReloading: false,
+            needsReload: false,
+            initialWendigoSpeed: 0.05,
+            wendigoSpeedIncrease: 0.02,
+        };
+        
+        // --- 3D Scene ---
+        let scene, camera, renderer, flashlight, gun, muzzleFlash, moon, lightning, rain, composer, vhsPass;
+        let player = { 
+            position: new THREE.Vector3(), 
+            velocity: new THREE.Vector3(), 
+            rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+            yVelocity: 0,
+            onGround: true,
+            stamina: 100,
+            maxStamina: 100,
+            isSprinting: false,
+            hasKey: false,
+        };
+        let adsState = {
+            isAiming: false,
+            aimProgress: 0,
+        };
+        let wendigo = {}, bullets = [];
+        let gunRecoil = { z: 0, isRecoiling: false };
+        let gunReloadPosition = { y: 0, isAnimating: false };
+        let world = {
+            collidables: [],
+            car: null,
+            key: null,
+        };
+        let flashlightFlicker = {
+            isFlickering: false,
+            timer: 0,
+            nextFlickerTime: 0,
+            baseIntensity: 1.2
+        };
+        let hallucination = {
+            mesh: null,
+            active: false,
+            spawnTimer: 0,
+            lifespan: 0,
+        };
+        let screenShake = {
+            intensity: 0,
+            decay: 0.9,
+        };
+        let lastTime = 0;
+
+        // --- Sound Engine ---
+        let sounds = {};
+        function setupSounds() {
+            const reverb = new Tone.Reverb(4).toDestination();
+            sounds.shotBoom = new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 2, envelope: { attack: 0.001, decay: 0.5, sustain: 0 } }).connect(reverb);
+            sounds.shotCrack = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.05, sustain: 0 } }).connect(reverb);
+            sounds.rifleShot = () => {
+                sounds.shotBoom.triggerAttackRelease("C1", "8n");
+                sounds.shotCrack.triggerAttackRelease("8n");
+            };
+            sounds.reloadSynth = new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.1 }, harmonicity: 3.1, modulationIndex: 16, resonance: 2000, octaves: 1 }).toDestination();
+            sounds.reload = () => sounds.reloadSynth.triggerAttackRelease("C4", "32n", "+0.0").triggerAttackRelease("C4", "32n", "+0.15");
+            const musicSynth = new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 10, envelope: { attack: 0.5, decay: 1 }, modulationEnvelope: { attack: 0.5, decay: 1 } }).toDestination();
+            sounds.bgMusic = new Tone.Loop(time => musicSynth.triggerAttackRelease("C#1", "4n", time), "2n");
+            sounds.ambience = new Tone.Noise("pink").toDestination();
+            sounds.ambience.volume.value = -35;
+            sounds.ambience.connect(reverb);
+            sounds.rainSound = new Tone.Noise("white").toDestination();
+            sounds.rainSound.volume.value = -25;
+            sounds.wendigoHit = new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 5 }).connect(reverb);
+            sounds.wendigoHit.volume.value = -5;
+            sounds.wendigoShriek = new Tone.FMSynth({ harmonicity: 3, modulationIndex: 20, envelope: { attack: 0.2, decay: 0.5, release: 1 }, modulation: { type: 'square' } }).connect(reverb);
+            sounds.wendigoShriek.volume.value = -10;
+            sounds.gameOver = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsawtooth" } }).toDestination();
+            sounds.emptyClip = new Tone.MetalSynth({ frequency: 100, envelope: { attack: 0.001, decay: 0.05 }, octaves: 1.5 }).toDestination();
+            sounds.transformation = new Tone.MembraneSynth({ pitchDecay: 0.8, octaves: 2, envelope: { attack: 0.1, decay: 1.5, sustain: 0.1, release: 2 } }).toDestination();
+            sounds.thunderBoom = new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 2, envelope: { attack: 0.05, decay: 1.5, sustain: 0 } }).connect(reverb);
+            sounds.thunderCrack = new Tone.NoiseSynth({ noise: { type: "brown", playbackRate: 0.5 }, envelope: { attack: 0.001, decay: 0.8, sustain: 0 } }).connect(reverb);
+            sounds.thunder = () => {
+                sounds.thunderBoom.triggerAttackRelease("C1", "1n");
+                sounds.thunderCrack.triggerAttackRelease("0.5n");
+            };
+            sounds.keyPickup = new Tone.MetalSynth({frequency: 400, envelope: {attack: 0.001, decay: 0.2, release: 0.2}, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5}).toDestination();
+            sounds.carFail = new Tone.MetalSynth({frequency: 100, envelope: {attack: 0.01, decay: 0.2}, octaves: 0.5}).toDestination();
+            const footstepSynth = new Tone.NoiseSynth({noise: {type: 'brown'}, envelope: {attack: 0.001, decay: 0.1, sustain: 0}}).toDestination();
+            footstepSynth.volume.value = -20;
+            sounds.footstepLoop = new Tone.Loop(time => footstepSynth.triggerAttackRelease('8n', time), '4n').stop();
+            sounds.heartbeatSynth = new Tone.MembraneSynth({pitchDecay: 0.05, octaves: 10, envelope: {attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4}}).toDestination();
+            sounds.heartbeatLoop = new Tone.Loop(time => sounds.heartbeatSynth.triggerAttackRelease('C2', '8n', time), '1n').stop();
+            sounds.stompSynth = new Tone.MembraneSynth({ pitchDecay: 0.2, octaves: 1, envelope: { attack: 0.01, decay: 0.8, sustain: 0 } }).connect(reverb);
+            sounds.stompLoop = new Tone.Loop(time => {
+                sounds.stompSynth.triggerAttackRelease('C1', '4n', time);
+                screenShake.intensity = 0.1;
+            }, '2n').stop();
+        }
+        
+        const keys = { w: false, a: false, s: false, d: false, ' ': false, shift: false, e: false };
+
+        // --- Event Listeners ---
+        window.addEventListener('keydown', (e) => { 
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+            if (key === ' ' && player.onGround) jump();
+            if (key === 'e') interact();
+        });
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = false;
+            if (key === 'r') reload();
+        });
+        
+        canvas.addEventListener('click', () => { if (gameState.running && document.pointerLockElement !== document.body) document.body.requestPointerLock(); });
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                document.addEventListener('mousedown', onMouseDown, false);
+                document.addEventListener('mouseup', onMouseUp, false);
+                document.addEventListener('mousemove', onMouseMove, false);
+            } else {
+                document.removeEventListener('mousedown', onMouseDown, false);
+                document.removeEventListener('mouseup', onMouseUp, false);
+                document.removeEventListener('mousemove', onMouseMove, false);
+                adsState.isAiming = false;
+            }
+        });
+
+        function onMouseDown(event) {
+            if (!gameState.running) return;
+            if (event.button === 0) shoot();
+            else if (event.button === 2) adsState.isAiming = true;
+        }
+        
+        function onMouseUp(event) {
+            if (!gameState.running) return;
+            if (event.button === 2) adsState.isAiming = false;
+        }
+        
+        function onMouseMove(event) {
+            if (!gameState.running) return;
+            player.rotation.y -= event.movementX * MOUSE_SENSITIVITY;
+            player.rotation.x -= event.movementY * MOUSE_SENSITIVITY;
+            player.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.rotation.x));
+        }
+
+        startButton.addEventListener('click', async () => {
+            startButton.disabled = true;
+            startButton.textContent = "LOADING...";
+            await Tone.start();
+            setupSounds();
+            sounds.bgMusic.start(0);
+            sounds.ambience.start(0);
+            sounds.rainSound.start(0);
+            sounds.heartbeatLoop.start(0);
+            sounds.footstepLoop.start(0);
+            Tone.Transport.start();
+            startScreen.classList.add('hidden');
+            uiContainer.classList.remove('hidden');
+            crosshair.classList.remove('hidden');
+            staminaBarContainer.classList.remove('hidden');
+            initGame();
+        });
+
+        restartButton.addEventListener('click', () => {
+            endScreen.classList.add('hidden');
+            uiContainer.classList.remove('hidden');
+            crosshair.classList.remove('hidden');
+            staminaBarContainer.classList.remove('hidden');
+            initGame();
+        });
+
+        window.addEventListener('resize', onWindowResize, false);
+        
+        // --- Game Setup ---
+        const VHSShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'time': { value: 0.0 },
+                'nIntensity': { value: 0.2 },
+                'sIntensity': { value: 0.03 },
+                'sCount': { value: 4096 },
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float nIntensity;
+                uniform float sIntensity;
+                uniform float sCount;
+                varying vec2 vUv;
+
+                void main() {
+                    vec4 color = texture2D(tDiffuse, vUv);
+                    float scanline = sin(vUv.y * sCount + time * 10.0) * sIntensity;
+                    color.rgb -= color.rgb * scanline;
+                    float noise = (fract(sin(dot(vUv, vec2(12.9898, 78.233)) + time) * 43758.5453) - 0.5) * nIntensity;
+                    color.rgb += noise;
+                    gl_FragColor = color;
+                }`
+        };
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x05050a);
+            scene.fog = new THREE.FogExp2(0x05050a, 0.03);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            renderer = new THREE.WebGLRenderer({ canvas: gameCanvas, antialias: true });
+            onWindowResize();
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.1);
+            scene.add(ambientLight);
+            
+            const moonLight = new THREE.DirectionalLight(0x607080, 0.2);
+            moonLight.position.set(0.5, 1, -0.5);
+            moonLight.castShadow = true;
+            scene.add(moonLight);
+
+            moon = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 32), new THREE.MeshBasicMaterial({ color: 0xf0f0e0 }));
+            scene.add(moon);
+            
+            lightning = new THREE.DirectionalLight(0xffffff, 0);
+            lightning.position.set(0, 1, 0);
+            scene.add(lightning);
+
+            flashlight = new THREE.SpotLight(0xffffee, flashlightFlicker.baseIntensity, 50, Math.PI / 7, 0.5, 2);
+            flashlight.castShadow = true;
+            scene.add(flashlight, flashlight.target);
+            gun = createGunModel();
+            camera.add(gun);
+            scene.add(camera);
+            hallucination.mesh = createHallucinationModel();
+            scene.add(hallucination.mesh);
+            createRainEffect();
+
+            composer = new THREE.EffectComposer(renderer);
+            const renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            vhsPass = new THREE.ShaderPass(VHSShader);
+            composer.addPass(vhsPass);
+        }
+
+        function createGunModel() {
+            const gunGroup = new THREE.Group();
+            const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3c21, roughness: 0.6 });
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.4 });
+            const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.6), woodMat);
+            stock.position.z = 0.2;
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.5), metalMat);
+            body.position.z = -0.3;
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), metalMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.z = -0.9;
+            muzzleFlash = new THREE.PointLight(0xffd700, 2, 5);
+            muzzleFlash.position.z = -1.3;
+            muzzleFlash.visible = false;
+            gunGroup.add(stock, body, barrel, muzzleFlash);
+            gunGroup.position.set(0.25, -0.3, -0.7);
+            gunGroup.rotation.y = -Math.PI / 12;
+            return gunGroup;
+        }
+        
+        function createWendigoModel() {
+            const wendigoGroup = new THREE.Group();
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3d352e, roughness: 0.8 });
+            const hornMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.6 });
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.6, 0.6), bodyMat);
+            torso.position.y = 0.6;
+            wendigoGroup.add(torso);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.8), bodyMat);
+            head.position.set(1.5, 0.8, 0);
+            const horn1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.1, 0.7, 5), hornMat);
+            horn1.position.set(0.2, 0.3, 0);
+            horn1.rotation.z = -Math.PI / 4;
+            const horn2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.1, 0.7, 5), hornMat);
+            horn2.position.set(-0.2, 0.3, 0);
+            horn2.rotation.z = Math.PI / 4;
+            head.add(horn1, horn2);
+            wendigoGroup.add(head);
+            const createLimb = () => {
+                const limb = new THREE.Group();
+                const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.0, 6), bodyMat);
+                upper.position.y = -0.5;
+                const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.0, 6), bodyMat);
+                lower.position.y = -0.9;
+                upper.add(lower);
+                limb.add(upper);
+                return limb;
+            };
+            wendigo.frontLeftLeg = createLimb();
+            wendigo.frontLeftLeg.position.set(1.0, 0.3, 0.4);
+            wendigoGroup.add(wendigo.frontLeftLeg);
+            wendigo.frontRightLeg = createLimb();
+            wendigo.frontRightLeg.position.set(1.0, 0.3, -0.4);
+            wendigoGroup.add(wendigo.frontRightLeg);
+            wendigo.backLeftLeg = createLimb();
+            wendigo.backLeftLeg.position.set(-1.0, 0.3, 0.4);
+            wendigoGroup.add(wendigo.backLeftLeg);
+            wendigo.backRightLeg = createLimb();
+            wendigo.backRightLeg.position.set(-1.0, 0.3, -0.4);
+            wendigoGroup.add(wendigo.backRightLeg);
+            wendigoGroup.rotation.y = -Math.PI / 2;
+            wendigoGroup.traverse(c => { if (c.isMesh) c.castShadow = true; });
+            return wendigoGroup;
+        }
+        
+        function createSlenderForm() {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 });
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 4, 8), mat);
+            torso.position.y = 6;
+            group.add(torso);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), mat);
+            head.position.y = 8.3;
+            group.add(head);
+            const createLimb = (height) => new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, height, 6), mat);
+            wendigo.leftArm = createLimb(4); wendigo.leftArm.position.set(-0.5, 7, 0);
+            wendigo.rightArm = createLimb(4); wendigo.rightArm.position.set(0.5, 7, 0);
+            wendigo.leftLeg = createLimb(4); wendigo.leftLeg.position.set(-0.2, 2, 0);
+            wendigo.rightLeg = createLimb(4); wendigo.rightLeg.position.set(0.2, 2, 0);
+            group.add(wendigo.leftArm, wendigo.rightArm, wendigo.leftLeg, wendigo.rightLeg);
+            group.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            return group;
+        }
+
+        function createHallucinationModel() {
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
+            const geo = new THREE.CylinderGeometry(0.3, 0.3, PLAYER_HEIGHT * 1.5, 8);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.visible = false;
+            return mesh;
+        }
+
+        function createRainEffect() {
+            const rainGeo = new THREE.BufferGeometry();
+            const vertices = [];
+            for (let i = 0; i < 15000; i++) {
+                vertices.push(
+                    Math.random() * MAP_SIZE - MAP_SIZE / 2,
+                    Math.random() * 50,
+                    Math.random() * MAP_SIZE - MAP_SIZE / 2
+                );
+            }
+            rainGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            const rainMat = new THREE.PointsMaterial({ color: 0xaaaaaa, size: 0.1, transparent: true, opacity: 0.8 });
+            rain = new THREE.Points(rainGeo, rainMat);
+            scene.add(rain);
+        }
+
+        function initGame() {
+            if (!renderer) initThree();
+            gameState = { ...gameState, running: true, gameOver: false, win: false, wendigoHealth: 5, playerAmmo: 11, ammoInClip: 1, isReloading: false, needsReload: false };
+            player.stamina = player.maxStamina;
+            player.hasKey = false;
+            keyIcon.classList.add('hidden');
+            wendigoHealthDisplay.textContent = gameState.wendigoHealth;
+            updateAmmoDisplay();
+            updateMessage("The air grows cold...", "white");
+            bullets.forEach(b => scene.remove(b.mesh)); bullets = [];
+            
+            // Clear old world objects
+            world.collidables.forEach(c => scene.remove(c.object));
+            world.collidables = [];
+            if(wendigo.mesh) scene.remove(wendigo.mesh);
+            if(world.car) scene.remove(world.car.group);
+            if(world.key) scene.remove(world.key.mesh);
+            world.car = null;
+            world.key = null;
+            
+            player.position.set(0, PLAYER_HEIGHT, 5);
+            player.rotation.set(0, 0, 0);
+            player.yVelocity = 0;
+            wendigo.isFinalForm = false;
+            wendigo.mesh = createWendigoModel();
+            wendigo.mesh.position.set(0, 0, -20);
+            wendigo.speed = gameState.initialWendigoSpeed;
+            wendigo.state = 'hunting';
+            wendigo.fleeTimer = 0;
+            wendigo.shriekTimer = Math.random() * 300 + 120;
+            scene.add(wendigo.mesh);
+            flashlightFlicker.nextFlickerTime = Math.random() * 15 + 10;
+            flashlightFlicker.isFlickering = false;
+            flashlight.intensity = flashlightFlicker.baseIntensity;
+            hallucination.spawnTimer = Math.random() * 20 + 15;
+            hallucination.active = false;
+            hallucination.mesh.visible = false;
+            lastTime = 0;
+            
+            populateWorld();
+
+            if(gameLoopId) cancelAnimationFrame(gameLoopId);
+            gameLoop();
+        }
+        
+        // --- World Generation ---
+        function createTree() {
+            const treeGroup = new THREE.Group();
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, flatShading: true });
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x1a361a, flatShading: true });
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.4, 8, 5), trunkMat);
+            trunk.position.y = 4;
+            const leaves = new THREE.Mesh(new THREE.SphereGeometry(2, 5, 4), leafMat);
+            leaves.position.y = 7;
+            treeGroup.add(trunk, leaves);
+            treeGroup.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            return treeGroup;
+        }
+
+        function createPineTree() {
+            const treeGroup = new THREE.Group();
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2c2a, flatShading: true });
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x0f5132, flatShading: true });
+            const height = Math.random() * 5 + 8;
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, height, 5), trunkMat);
+            trunk.position.y = height/2;
+            treeGroup.add(trunk);
+            for(let i = 0; i < 5; i++) {
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(2 - i*0.3, 3, 6), leafMat);
+                leaves.position.y = height - i * 1.5;
+                treeGroup.add(leaves);
+            }
+            treeGroup.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            return treeGroup;
+        }
+
+        function createRock() {
+            const rockMat = new THREE.MeshStandardMaterial({color: 0x4a5568, flatShading: true});
+            const size = Math.random() * 1.5 + 0.5;
+            const geo = new THREE.IcosahedronGeometry(size, 0);
+            const rock = new THREE.Mesh(geo, rockMat);
+            rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            rock.castShadow = true;
+            return rock;
+        }
+
+        function populateWorld() {
+            const groundGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a202c });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            const treeCount = Math.floor(MAP_SIZE * MAP_SIZE * TREE_DENSITY);
+            for (let i = 0; i < treeCount; i++) {
+                const x = (Math.random() - 0.5) * (MAP_SIZE - 4);
+                const z = (Math.random() - 0.5) * (MAP_SIZE - 4);
+                if (Math.hypot(x,z) < 15) continue;
+                
+                const tree = Math.random() > 0.3 ? createTree() : createPineTree();
+                tree.position.set(x, 0, z);
+                scene.add(tree);
+                world.collidables.push({object: tree, box: new THREE.Box3().setFromObject(tree.children[0]).expandByScalar(-0.2)});
+            }
+            
+            const halfMap = MAP_SIZE / 2;
+            const boundaryMat = new THREE.MeshBasicMaterial({visible: false});
+            
+            const wall1 = new THREE.Mesh(new THREE.BoxGeometry(MAP_SIZE, 10, 1), boundaryMat);
+            wall1.position.z = halfMap;
+            scene.add(wall1);
+            world.collidables.push({object: wall1, box: new THREE.Box3().setFromObject(wall1)});
+
+            const wall2 = new THREE.Mesh(new THREE.BoxGeometry(MAP_SIZE, 10, 1), boundaryMat);
+            wall2.position.z = -halfMap;
+            scene.add(wall2);
+            world.collidables.push({object: wall2, box: new THREE.Box3().setFromObject(wall2)});
+
+            const wall3 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, MAP_SIZE), boundaryMat);
+            wall3.position.x = halfMap;
+            scene.add(wall3);
+            world.collidables.push({object: wall3, box: new THREE.Box3().setFromObject(wall3)});
+
+            const wall4 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, MAP_SIZE), boundaryMat);
+            wall4.position.x = -halfMap;
+            scene.add(wall4);
+            world.collidables.push({object: wall4, box: new THREE.Box3().setFromObject(wall4)});
+
+            const rockCount = Math.floor(MAP_SIZE * MAP_SIZE * ROCK_DENSITY);
+            for(let i=0; i < rockCount; i++) {
+                const rock = createRock();
+                const x = (Math.random() - 0.5) * MAP_SIZE;
+                const z = (Math.random() - 0.5) * MAP_SIZE;
+                rock.position.set(x, rock.geometry.parameters.radius / 2, z);
+                scene.add(rock);
+                world.collidables.push({object: rock, box: new THREE.Box3().setFromObject(rock)});
+            }
+
+            const grassGeo = new THREE.BoxGeometry(0.1, 0.5, 0.1);
+            const grassMat = new THREE.MeshStandardMaterial({ color: 0x1a4d2e });
+            const grassCount = Math.floor(MAP_SIZE * MAP_SIZE * GRASS_DENSITY);
+            for (let i=0; i < grassCount; i++) {
+                const grass = new THREE.Mesh(grassGeo, grassMat);
+                const x = (Math.random() - 0.5) * MAP_SIZE;
+                const z = (Math.random() - 0.5) * MAP_SIZE;
+                grass.position.set(x, 0.25, z);
+                grass.rotation.y = Math.random() * Math.PI;
+                scene.add(grass);
+            }
+
+            const carX = (Math.random() - 0.5) * (MAP_SIZE - 20);
+            const carZ = (Math.random() - 0.5) * (MAP_SIZE - 20);
+            const carGroup = createCar();
+            carGroup.position.set(carX, 0, carZ);
+            scene.add(carGroup);
+            world.car = { group: carGroup };
+            world.collidables.push({object: carGroup, box: new THREE.Box3().setFromObject(carGroup)});
+
+            let keyX, keyZ;
+            do {
+                keyX = (Math.random() - 0.5) * (MAP_SIZE - 20);
+                keyZ = (Math.random() - 0.5) * (MAP_SIZE - 20);
+            } while (Math.hypot(keyX - carX, keyZ - carZ) < 50);
+            const keyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.1,0.1), new THREE.MeshStandardMaterial({color: 0xffd700, emissive: 0xffd700}));
+            const keyLight = new THREE.PointLight(0xffd700, 0.5, 3);
+            keyMesh.add(keyLight);
+            keyMesh.position.set(keyX, 0.5, keyZ);
+            scene.add(keyMesh);
+            world.key = { mesh: keyMesh };
+        }
+        
+        function createHut() {
+            const group = new THREE.Group();
+            const wallMat = new THREE.MeshStandardMaterial({color: 0x4a2c2a});
+            const roofMat = new THREE.MeshStandardMaterial({color: 0x2d1a1a});
+            const base = new THREE.Mesh(new THREE.BoxGeometry(5,3,4), wallMat);
+            base.position.y = 1.5;
+            const roof = new THREE.Mesh(new THREE.CylinderGeometry(0, 4, 2, 4), roofMat);
+            roof.position.y = 3.5;
+            roof.rotation.y = Math.PI/4;
+            group.add(base, roof);
+            return group;
+        }
+
+        function createPond() {
+             const pond = new THREE.Mesh(
+                new THREE.CylinderGeometry(8, 8, 0.2, 16),
+                new THREE.MeshStandardMaterial({color: 0x001e38, transparent: true, opacity: 0.8, roughness: 0.2})
+            );
+            pond.position.y = -0.1;
+            return pond;
+        }
+
+        function createRoad() {
+            return new THREE.Mesh(
+                new THREE.BoxGeometry(MAP_SIZE, 0.1, 4),
+                new THREE.MeshStandardMaterial({color: 0x4a3c30})
+            );
+        }
+
+        function createTower() {
+            const group = new THREE.Group();
+            const metalMat = new THREE.MeshStandardMaterial({color: 0x333333, metalness: 0.9, roughness: 0.5});
+            for(let i = 0; i < 5; i++) {
+                const section = new THREE.Mesh(new THREE.BoxGeometry(2 - i*0.2, 4, 2 - i*0.2), metalMat);
+                section.position.y = i * 4 + 2;
+                group.add(section);
+            }
+            return group;
+        }
+
+        function createCar() {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({color: 0x5a1d1d, roughness: 0.8});
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), mat);
+            body.position.y = 0.5;
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), mat);
+            cabin.position.y = 1.5;
+            cabin.position.z = -1;
+            const headlight1 = new THREE.SpotLight(0xffffaa, 1, 20, Math.PI / 4, 0.5);
+            headlight1.position.set(0.8, 0.5, -2);
+            headlight1.target.position.set(0.8, 0.2, -10);
+            const headlight2 = headlight1.clone();
+            headlight2.position.x = -0.8;
+            headlight2.target.position.x = -0.8;
+            group.add(body, cabin, headlight1, headlight1.target, headlight2, headlight2.target);
+            return group;
+        }
+        
+        function createCampsite() {
+            const group = new THREE.Group();
+            const tentMat = new THREE.MeshStandardMaterial({color: 0x2c5282});
+            const tent = new THREE.Mesh(new THREE.CylinderGeometry(0, 2, 3, 3), tentMat);
+            tent.position.y = 1.5;
+            tent.rotation.y = Math.PI / 6;
+            const fireLight = new THREE.PointLight(0xffa500, 0.8, 10);
+            fireLight.position.y = 0.5;
+            group.add(tent, fireLight);
+            return group;
+        }
+
+        // --- Game Logic ---
+        function updatePlayer(deltaTime) {
+            player.isSprinting = keys.shift && player.stamina > 0;
+            const currentSpeed = PLAYER_SPEED * (player.isSprinting ? SPRINT_MULTIPLIER : 1);
+
+            const forward = new THREE.Vector3(0, 0, -1).applyEuler(player.rotation);
+            const right = new THREE.Vector3(1, 0, 0).applyEuler(player.rotation);
+            player.velocity.set(0, 0, 0);
+            if (keys.w) player.velocity.add(forward);
+            if (keys.s) player.velocity.sub(forward);
+            if (keys.a) player.velocity.sub(right);
+            if (keys.d) player.velocity.add(right);
+            
+            if (player.velocity.lengthSq() > 0) player.velocity.normalize().multiplyScalar(currentSpeed);
+            
+            player.yVelocity -= GRAVITY;
+            player.position.y += player.yVelocity;
+
+            player.position.x += player.velocity.x;
+            resolveCollisions();
+            player.position.z += player.velocity.z;
+            resolveCollisions();
+
+
+            if (player.position.y < PLAYER_HEIGHT) {
+                player.position.y = PLAYER_HEIGHT;
+                player.yVelocity = 0;
+                player.onGround = true;
+            }
+            
+            const halfMap = MAP_SIZE / 2 - 1;
+            player.position.x = Math.max(-halfMap, Math.min(halfMap, player.position.x));
+            player.position.z = Math.max(-halfMap, Math.min(halfMap, player.position.z));
+
+            if (player.isSprinting && player.velocity.lengthSq() > 0) player.stamina -= 33 * deltaTime;
+            else if (player.stamina < player.maxStamina) player.stamina += 20 * deltaTime;
+            
+            player.stamina = Math.max(0, Math.min(player.maxStamina, player.stamina));
+            staminaBar.style.width = `${(player.stamina / player.maxStamina) * 100}%`;
+            
+            if (player.velocity.lengthSq() > 0 && player.onGround) {
+                if (sounds.footstepLoop.state !== 'started') sounds.footstepLoop.start();
+                sounds.footstepLoop.interval = player.isSprinting ? '8n' : '4n';
+            } else {
+                if (sounds.footstepLoop.state === 'started') sounds.footstepLoop.stop();
+            }
+        }
+
+        function resolveCollisions() {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.4, PLAYER_HEIGHT, 0.4));
+            
+            for (const collidable of world.collidables) {
+                if (playerBox.intersectsBox(collidable.box)) {
+                    const intersection = new THREE.Box3();
+                    intersection.copy(playerBox).intersect(collidable.box);
+                    const penetration = new THREE.Vector3();
+                    intersection.getSize(penetration);
+                    const centerPlayer = new THREE.Vector3();
+                    playerBox.getCenter(centerPlayer);
+                    const centerObstacle = new THREE.Vector3();
+                    collidable.box.getCenter(centerObstacle);
+                    const direction = new THREE.Vector3().subVectors(centerPlayer, centerObstacle);
+
+                    if (penetration.x < penetration.z) {
+                        player.position.x += (direction.x > 0 ? 1 : -1) * penetration.x;
+                    } else {
+                        player.position.z += (direction.z > 0 ? 1 : -1) * penetration.z;
+                    }
+                }
+            }
+        }
+        
+        function jump() {
+            if (player.onGround) {
+                player.yVelocity = JUMP_STRENGTH;
+                player.onGround = false;
+            }
+        }
+        
+        function updateWendigo(time) {
+             if (!wendigo.mesh) return;
+             
+             const distToPlayer = player.position.distanceTo(wendigo.mesh.position);
+             const proximity = Math.max(0, 1 - distToPlayer / 40);
+             sounds.heartbeatSynth.volume.value = Tone.gainToDb(proximity * 0.8);
+             sounds.heartbeatLoop.interval = 0.5 + (1 - proximity) * 1.5;
+             if(distToPlayer < 40 && sounds.heartbeatLoop.state !== 'started') sounds.heartbeatLoop.start();
+             else if (distToPlayer >= 40 && sounds.heartbeatLoop.state === 'started') sounds.heartbeatLoop.stop();
+             
+             wendigo.shriekTimer--;
+             if (wendigo.shriekTimer <= 0 && wendigo.state === 'hunting') {
+                sounds.wendigoShriek.triggerAttackRelease("A4", "1n");
+                wendigo.shriekTimer = Math.random() * 400 + 240;
+             }
+             if (wendigo.state === 'fleeing' || wendigo.state === 'dodging') {
+                wendigo.fleeTimer--;
+                if (wendigo.fleeTimer <= 0) {
+                    wendigo.state = 'hunting';
+                    if (wendigo.state !== 'dodging') updateMessage("A guttural roar echoes... It's back.", "red");
+                }
+                if (wendigo.fleeTarget) wendigo.mesh.position.lerp(wendigo.fleeTarget, 0.1);
+            } else if (wendigo.state === 'hunting') {
+                const direction = new THREE.Vector3().subVectors(player.position, wendigo.mesh.position).normalize();
+                wendigo.mesh.position.addScaledVector(direction, wendigo.speed);
+            }
+            
+            const animSpeed = wendigo.state === 'hunting' ? wendigo.speed * 80 : 20;
+            const legSwing = Math.sin(time * animSpeed) * 0.8;
+            
+            if (wendigo.isFinalForm) {
+                wendigo.mesh.position.y = 4;
+                wendigo.leftArm.rotation.x = legSwing;
+                wendigo.rightArm.rotation.x = -legSwing;
+                wendigo.leftLeg.rotation.x = -legSwing;
+                wendigo.rightLeg.rotation.x = legSwing;
+                if (sounds.stompLoop.state !== 'started') sounds.stompLoop.start(0);
+                sounds.stompLoop.interval = 0.5 / (wendigo.speed / gameState.initialWendigoSpeed);
+            } else {
+                wendigo.mesh.position.y = 0;
+                wendigo.frontLeftLeg.rotation.z = legSwing;
+                wendigo.backRightLeg.rotation.z = legSwing;
+                wendigo.frontRightLeg.rotation.z = -legSwing;
+                wendigo.backLeftLeg.rotation.z = -legSwing;
+                if (sounds.stompLoop.state === 'started') sounds.stompLoop.stop();
+            }
+            
+            const lookAtPos = player.position.clone();
+            lookAtPos.y = wendigo.mesh.position.y;
+            wendigo.mesh.lookAt(lookAtPos);
+        }
+
+        function shoot() {
+            if (gameState.isReloading || gunRecoil.isRecoiling) return;
+            if (gameState.ammoInClip <= 0) {
+                sounds.emptyClip.triggerAttackRelease("C2", "8n");
+                if (gameState.playerAmmo > 0) updateMessage("PRESS 'R' TO RELOAD", "yellow");
+                return;
+            }
+            
+            if (gameState.wendigoHealth <= 2 && wendigo.state === 'hunting') {
+                wendigo.state = 'dodging';
+                wendigo.fleeTimer = 30;
+                const dodgeDir = new THREE.Vector3(Math.random() > 0.5 ? 1 : -1, 0, 0).applyQuaternion(wendigo.mesh.quaternion);
+                wendigo.fleeTarget = new THREE.Vector3().addVectors(wendigo.mesh.position, dodgeDir.multiplyScalar(3));
+            }
+
+            gameState.ammoInClip--;
+            if (gameState.ammoInClip <= 0) gameState.needsReload = true;
+            updateAmmoDisplay();
+            sounds.rifleShot();
+            muzzleFlash.visible = true;
+            setTimeout(() => { muzzleFlash.visible = false; }, 60);
+            gunRecoil.isRecoiling = true;
+            gunRecoil.z = 0.2;
+
+            const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfff791 }));
+            const velocity = new THREE.Vector3();
+            camera.getWorldDirection(velocity);
+
+            if (!adsState.isAiming) {
+                const spread = 0.01;
+                velocity.x += (Math.random() - 0.5) * spread;
+                velocity.y += (Math.random() - 0.5) * spread;
+                velocity.z += (Math.random() - 0.5) * spread;
+            }
+
+            bullet.position.copy(camera.position); 
+            bullets.push({ mesh: bullet, velocity: velocity, boundingBox: new THREE.Box3() });
+            scene.add(bullet);
+        }
+        
+        function reload() {
+            if (gameState.isReloading || !gameState.needsReload) return;
+            if (gameState.playerAmmo <= 0) {
+                updateMessage("NO AMMO LEFT!", "red");
+                return;
+            }
+            gameState.isReloading = true;
+            updateMessage("RELOADING...", "cyan");
+            sounds.reload();
+            gunReloadPosition.isAnimating = true;
+            gunReloadPosition.y = -0.2;
+            setTimeout(() => {
+                gameState.playerAmmo--;
+                gameState.ammoInClip = 1;
+                gameState.isReloading = false;
+                gameState.needsReload = false;
+                gunRecoil.isRecoiling = false;
+                updateMessage("", "white");
+                updateAmmoDisplay();
+            }, RELOAD_TIME);
+        }
+
+        function updateBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.mesh.position.addScaledVector(b.velocity, BULLET_SPEED);
+                b.boundingBox.setFromObject(b.mesh);
+                if (!wendigo.mesh) continue;
+                if (b.boundingBox.intersectsBox(new THREE.Box3().setFromObject(wendigo.mesh))) {
+                    handleWendigoHit();
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                if (b.mesh.position.distanceTo(player.position) > 100) {
+                    scene.remove(b.mesh);
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+        
+        function handleWendigoHit() {
+            sounds.wendigoHit.triggerAttackRelease("C2", "8n");
+            
+            sounds.thunder();
+            lightning.intensity = 2;
+            const originalFogColor = scene.fog.color.getHex();
+            scene.fog.color.setHex(0xe0e0ff);
+            setTimeout(() => {
+                lightning.intensity = 0;
+                scene.fog.color.setHex(originalFogColor);
+            }, 100);
+            setTimeout(() => {
+                lightning.intensity = 1.5;
+                scene.fog.color.setHex(0xe0e0ff);
+            }, 200);
+            setTimeout(() => {
+                lightning.intensity = 0;
+                scene.fog.color.setHex(originalFogColor);
+            }, 250);
+
+            gameState.wendigoHealth--;
+            wendigoHealthDisplay.textContent = gameState.wendigoHealth;
+            
+            if (gameState.wendigoHealth === 1 && !wendigo.isFinalForm) {
+                wendigo.isFinalForm = true;
+                const oldPos = wendigo.mesh.position.clone();
+                scene.remove(wendigo.mesh);
+                wendigo.mesh = createSlenderForm();
+                wendigo.mesh.position.copy(oldPos);
+                scene.add(wendigo.mesh);
+                wendigo.speed *= 1.5;
+                updateMessage("IT'S... CHANGING!", "red");
+                sounds.transformation.triggerAttackRelease("C1", "1n");
+                return;
+            }
+
+            if (gameState.wendigoHealth <= 0) {
+                gameState.win = true;
+                endGame();
+                return;
+            }
+
+            wendigo.state = 'fleeing';
+            wendigo.fleeTimer = 240;
+            wendigo.speed += gameState.wendigoSpeedIncrease;
+            updateMessage("DIRECT HIT! It screeches in rage!", "yellow");
+            const fleeDirection = new THREE.Vector3().subVectors(wendigo.mesh.position, player.position).normalize();
+            const fleeDistance = 80;
+            wendigo.fleeTarget = new THREE.Vector3().addVectors(wendigo.mesh.position, fleeDirection.multiplyScalar(fleeDistance));
+        }
+
+        function checkGameOver() {
+            if (wendigo.mesh && player.position.distanceTo(wendigo.mesh.position) < (wendigo.isFinalForm ? 4.5 : 2.5) ) {
+                gameState.gameOver = true;
+                endGame();
+            }
+        }
+
+        function updateHallucinations(deltaTime) {
+            if (hallucination.active) {
+                hallucination.lifespan -= deltaTime;
+                const toHallucination = new THREE.Vector3().subVectors(hallucination.mesh.position, camera.position).normalize();
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection);
+                const angle = toHallucination.angleTo(cameraDirection);
+
+                if (angle < 0.4 || hallucination.lifespan <= 0) {
+                    hallucination.active = false;
+                    hallucination.mesh.visible = false;
+                    hallucination.spawnTimer = Math.random() * 25 + 20;
+                } else {
+                    const moveDir = new THREE.Vector3().subVectors(player.position, hallucination.mesh.position).normalize();
+                    hallucination.mesh.position.addScaledVector(moveDir, 0.5 * deltaTime);
+                }
+            } else {
+                hallucination.spawnTimer -= deltaTime;
+                if (hallucination.spawnTimer <= 0) {
+                    hallucination.active = true;
+                    hallucination.mesh.visible = true;
+                    hallucination.lifespan = Math.random() * 1.5 + 1.0;
+
+                    const angle = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 3 + Math.random() * Math.PI / 4);
+                    const distance = 15 + Math.random() * 10;
+                    const spawnDir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation).applyAxisAngle(new THREE.Vector3(0,1,0), angle);
+                    const spawnPos = new THREE.Vector3().addVectors(player.position, spawnDir.multiplyScalar(distance));
+                    hallucination.mesh.position.set(spawnPos.x, PLAYER_HEIGHT * 0.75, spawnPos.z);
+                }
+            }
+        }
+
+        function interact() {
+            if (world.key && !player.hasKey) {
+                const keyWorldPos = new THREE.Vector3();
+                world.key.mesh.getWorldPosition(keyWorldPos);
+                if(player.position.distanceTo(keyWorldPos) < 2) {
+                    player.hasKey = true;
+                    scene.remove(world.key.mesh);
+                    world.key = null;
+                    keyIcon.classList.remove('hidden');
+                    sounds.keyPickup.triggerAttackRelease("C5", "8n");
+                    updateMessage("You found a car key...", "yellow");
+                }
+            }
+            if (world.car) {
+                const carWorldPos = new THREE.Vector3();
+                world.car.group.getWorldPosition(carWorldPos);
+                if (player.position.distanceTo(carWorldPos) < 5) {
+                    if (player.hasKey) {
+                        gameState.win = true;
+                        endGame('escape');
+                    } else {
+                        sounds.carFail.triggerAttackRelease("C2", "8n");
+                        updateMessage("It's locked. You need to find a key.", "cyan");
+                    }
+                }
+            }
+        }
+
+        function updateCameraAndFlashlight(time, deltaTime) {
+            let shakeOffsetX = 0;
+            let shakeOffsetY = 0;
+            if (screenShake.intensity > 0.001) {
+                shakeOffsetX = (Math.random() - 0.5) * screenShake.intensity;
+                shakeOffsetY = (Math.random() - 0.5) * screenShake.intensity;
+                screenShake.intensity *= screenShake.decay;
+            }
+
+            camera.position.copy(player.position);
+            camera.position.y += Math.sin(time * 10.0) * (player.isSprinting ? 0.1 : 0.05) * (player.velocity.length() / PLAYER_SPEED);
+            
+            const tempEuler = new THREE.Euler(player.rotation.x + shakeOffsetY, player.rotation.y + shakeOffsetX, 0, 'YXZ');
+            camera.quaternion.setFromEuler(tempEuler);
+            
+            moon.position.copy(player.position);
+            moon.position.y += 50;
+            moon.position.z -= 50;
+
+            flashlight.position.copy(camera.position);
+            const targetPos = new THREE.Vector3();
+            camera.getWorldDirection(targetPos);
+            flashlight.target.position.addVectors(camera.position, targetPos);
+
+            if (flashlightFlicker.isFlickering) {
+                flashlightFlicker.timer -= deltaTime;
+                if (Math.random() > 0.2) flashlight.intensity = Math.random() * flashlightFlicker.baseIntensity * 0.5;
+                else flashlight.intensity = flashlightFlicker.baseIntensity;
+                if (flashlightFlicker.timer <= 0) {
+                    flashlightFlicker.isFlickering = false;
+                    flashlight.intensity = flashlightFlicker.baseIntensity;
+                    flashlightFlicker.nextFlickerTime = Math.random() * 20 + 10;
+                }
+            } else {
+                flashlightFlicker.nextFlickerTime -= deltaTime;
+                if (flashlightFlicker.nextFlickerTime <= 0) {
+                    flashlightFlicker.isFlickering = true;
+                    flashlightFlicker.timer = Math.random() * 0.4 + 0.1;
+                }
+            }
+            
+            const targetProgress = adsState.isAiming ? 1 : 0;
+            adsState.aimProgress += (targetProgress - adsState.aimProgress) * ADS_SPEED * deltaTime;
+
+            const hipPos = new THREE.Vector3(0.25, -0.3, -0.7);
+            const hipRot = new THREE.Euler(0, -Math.PI / 12, 0);
+            const adsPos = new THREE.Vector3(0, -0.25, -0.6);
+            const adsRot = new THREE.Euler(0, 0, 0);
+
+            gun.position.lerpVectors(hipPos, adsPos, adsState.aimProgress);
+            gun.quaternion.slerp(new THREE.Quaternion().setFromEuler(hipRot), adsState.aimProgress);
+            gun.quaternion.slerp(new THREE.Quaternion().setFromEuler(adsRot), adsState.aimProgress);
+            
+            if (gunRecoil.isRecoiling) {
+                gun.position.z += gunRecoil.z;
+                gunRecoil.z *= -0.5;
+                if (Math.abs(gun.position.z - (adsState.isAiming ? adsPos.z : hipPos.z)) < 0.01) {
+                    gunRecoil.isRecoiling = false;
+                }
+            } 
+            
+            if (gunReloadPosition.isAnimating) {
+                const reloadPos = new THREE.Vector3(0.25, -0.4, -0.7);
+                gun.position.lerp(reloadPos, 0.1);
+                if (!gameState.isReloading && gun.position.distanceTo(hipPos) < 0.01) {
+                    gunReloadPosition.isAnimating = false;
+                }
+            }
+
+            const baseFov = 75;
+            const adsFov = 60;
+            camera.fov = THREE.MathUtils.lerp(baseFov, adsFov, adsState.aimProgress);
+            camera.updateProjectionMatrix();
+
+            crosshair.style.display = adsState.aimProgress > 0.5 ? 'none' : 'block';
+        }
+
+        function gameLoop(time) {
+            if (!gameState.running) return;
+            const timeSeconds = time / 1000;
+            const deltaTime = lastTime > 0 ? timeSeconds - lastTime : 0;
+            lastTime = timeSeconds;
+
+            updatePlayer(deltaTime);
+            updateWendigo(timeSeconds);
+            updateBullets();
+            checkGameOver();
+            updateCameraAndFlashlight(timeSeconds, deltaTime);
+            updateHallucinations(deltaTime);
+
+            if(rain) {
+                rain.position.copy(player.position);
+                rain.geometry.attributes.position.array.forEach((val, i) => {
+                    if (i % 3 === 1) { // y-axis
+                        rain.geometry.attributes.position.array[i] -= 0.5;
+                        if(rain.geometry.attributes.position.array[i] < 0) {
+                            rain.geometry.attributes.position.array[i] = 50;
+                        }
+                    }
+                });
+                rain.geometry.attributes.position.needsUpdate = true;
+            }
+            
+            vhsPass.uniforms.time.value = timeSeconds;
+            composer.render(deltaTime);
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        function endGame(winType = 'kill') {
+            gameState.running = false;
+            document.exitPointerLock();
+            cancelAnimationFrame(gameLoopId);
+            uiContainer.classList.add('hidden');
+            crosshair.classList.add('hidden');
+            staminaBarContainer.classList.add('hidden');
+            if (gameState.win) {
+                if (winType === 'escape') {
+                    document.getElementById('end-title').textContent = "YOU ESCAPED";
+                    document.getElementById('end-title').style.color = "#68d391";
+                    document.getElementById('end-message').textContent = "You made it out alive... this time.";
+                } else {
+                    document.getElementById('end-title').textContent = "IT IS DONE";
+                    document.getElementById('end-title').style.color = "#a7f3d0";
+                    document.getElementById('end-message').textContent = "The beast is slain. The forest is quiet once more.";
+                }
+            } else {
+                sounds.gameOver.triggerAttackRelease(["C2", "G1", "D2"], "2n");
+                document.getElementById('end-title').textContent = "YOU DIED";
+                document.getElementById('end-title').style.color = "#7f1d1d";
+                document.getElementById('end-message').textContent = "The forest claims another soul.";
+            }
+            endScreen.classList.remove('hidden');
+        }
+
+        function updateMessage(text, color) {
+            messageDisplay.textContent = text;
+            messageDisplay.style.color = color;
+        }
+
+        function updateAmmoDisplay() {
+            playerAmmoDisplay.textContent = `${gameState.ammoInClip} / ${gameState.playerAmmo}`;
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            const bounds = gameContainer.getBoundingClientRect();
+            const width = bounds.width;
+            const height = bounds.height - (uiContainer.offsetHeight);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            if(composer) composer.setSize(width, height);
+        }
+    </script>
+</body>
+</html>
+
